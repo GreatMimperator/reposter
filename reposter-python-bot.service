@@ -1,0 +1,14 @@
+[Unit]
+Description=Reposter sends message in specified channels
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 main.py
+Restart=always
+User=root
+WorkingDirectory=/home/root/reposter
+StandardOutput=append:/var/log/reposter-python-bot.log
+StandardError=append:/var/log/reposter-python-bot.log
+
+[Install]
+WantedBy=multi-user.target
