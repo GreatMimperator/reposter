@@ -8,32 +8,12 @@ from telegram.ext import Application, MessageHandler, CallbackContext, filters
 
 from config_parser import *
 
-# Функция для конвертации видео в формат mp4
-def convert_to_mp4(input_file: str, output_file: str):
-    try:
-        ffmpeg.input(input_file).output(output_file).run()
-        return output_file
-    except ffmpeg.Error as e:
-        print(f"Ошибка конвертации: {e}")
-        return None
-    
 async def download_and_convert_video(file_info: File) -> tuple[str, str]:
-
-    # Генерируем уникальное имя файла, чтобы избежать конфликтов
-    unique_filename = f"{uuid.uuid4()}"  # Замените расширение в зависимости от исходного формата
-
-    # Путь для временного сохранения файла
+    unique_filename = f"{uuid.uuid4()}"
     tmp_file_path = os.path.join(tempfile.gettempdir(), unique_filename)
-
-    # Скачиваем файл во временную папку
     await file_info.download_to_drive(tmp_file_path)
-
-    # Указываем путь для конвертированного файла
     mp4_file_path = tmp_file_path + ".mp4"
-
-    # Используем ffmpeg для конвертации в MP4
     ffmpeg.input(tmp_file_path).output(mp4_file_path).run()
-
     return tmp_file_path, mp4_file_path
 
 # Функция для пересылки сообщений в каналы
@@ -52,24 +32,30 @@ async def forward_to_channels_with_check(update: Update, context: CallbackContex
         for channel_id in channel_ids:
             await context.bot.send_photo(chat_id=channel_id, photo=message.photo[-1], caption=message.caption)
     elif message.video:
-        video = message.video
         for channel_id in channel_ids:
-            await context.bot.send_video(chat_id=channel_id, video=video.file_id, caption=message.caption)
+            await context.bot.send_video(chat_id=channel_id, video=message.video.file_id, caption=message.caption)
     elif message.document:
         if message.document.mime_type == "video/quicktime":
-            # Загружаем файл
             file_info = await context.bot.get_file(message.document.file_id)
-            input_file_path, converted_video_path = await download_and_convert_video(file_info)
-
-            if converted_video_path:
-                # Отправляем видео в канал
-                with open(converted_video_path, 'rb') as video:
-                    for channel_id in channel_ids:
-                        await context.bot.send_video(chat_id=channel_id, video=video)
-
-                # Удаляем временные файлы
-                os.remove(input_file_path)
-                os.remove(converted_video_path)
+            input_file_path = None
+            converted_video_path = None
+            try:
+                input_file_path, converted_video_path = await download_and_convert_video(file_info)
+                if converted_video_path:
+                    with open(converted_video_path, 'rb') as video:
+                        for channel_id in channel_ids:
+                            await context.bot.send_video(chat_id=channel_id, video=video, filename=message.document.file_name)
+            except ffmpeg.Error as e:
+                await bot.send_message(
+                    chat_id=user_chat_id,
+                    text="Ошибка при конвертации!"
+                )
+                return
+            finally:
+                if input_file_path is not None and os.path.exists(input_file_path):
+                    os.remove(input_file_path)
+                if converted_video_path is not None and os.path.exists(converted_video_path):
+                    os.remove(converted_video_path)
         else:
             file = message.document
             for channel_id in channel_ids:
@@ -87,7 +73,6 @@ async def forward_to_channels_with_check(update: Update, context: CallbackContex
         chat_id=user_chat_id,
         text="Готово!"
     )
-
 
 def main():
     # Загружаем токен из конфигурации
@@ -112,7 +97,6 @@ def main():
 
     # Запускаем бота
     application.run_polling()
-
 
 if __name__ == '__main__':
     main()

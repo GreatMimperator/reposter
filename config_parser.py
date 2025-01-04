@@ -18,6 +18,7 @@ def get_admin_ids(loaded_config_parser: ConfigParser) -> list[int]:
     return list(map(int, loaded_config_parser.get(ID_SECTION, 'admin_ids').split(',')))
 
 def get_linkable_channel_ids(loaded_config_parser: ConfigParser) -> list[int]:
+    """Вернет идентификаторы, которые можно указывать как chat_id (добавляем -100 в начало к считанному)"""
     return list(
         map(
             lambda channel_id:
