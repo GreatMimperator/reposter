@@ -16,7 +16,7 @@ async def download_and_convert_video(file_info: File) -> tuple[str, str]:
     ffmpeg.input(tmp_file_path).output(mp4_file_path).run()
     return tmp_file_path, mp4_file_path
 
-async def download_photo(file_info: File) -> str:
+async def download_file(file_info: File) -> str:
     unique_filename = f"{uuid.uuid4()}"
     tmp_file_path = os.path.join(tempfile.gettempdir(), unique_filename)
     await file_info.download_to_drive(tmp_file_path)
@@ -42,38 +42,48 @@ async def forward_to_channels_with_check(update: Update, context: CallbackContex
             await context.bot.send_video(chat_id=channel_id, video=message.video.file_id, caption=message.caption)
     elif message.document:
         document = message.document
-        if document.mime_type == "video/quicktime":
+        if document.mime_type.startswith("video/"):
             file_info = await context.bot.get_file(document.file_id)
-            input_file_path = None
-            converted_video_path = None
-            try:
-                input_file_path, converted_video_path = await download_and_convert_video(file_info)
-                with open(converted_video_path, 'rb') as video:
-                    for channel_id in channel_ids:
-                        await context.bot.send_video(chat_id=channel_id, video=video, filename=message.document.file_name)
-            except ffmpeg.Error as e:
-                await bot.send_message(
-                    chat_id=user_chat_id,
-                    text="Ошибка при конвертации!"
-                )
-                return
-            finally:
-                if input_file_path is not None and os.path.exists(input_file_path):
-                    os.remove(input_file_path)
-                if converted_video_path is not None and os.path.exists(converted_video_path):
-                    os.remove(converted_video_path)
+            if document.mime_type != "video/mp4":
+                input_file_path = None
+                converted_video_path = None
+                try:
+                    input_file_path, converted_video_path = await download_and_convert_video(file_info)
+                    with open(converted_video_path, 'rb') as video:
+                        for channel_id in channel_ids:
+                            await context.bot.send_video(chat_id=channel_id, video=video, filename=message.document.file_name)
+                except ffmpeg.Error as e:
+                    await bot.send_message(
+                        chat_id=user_chat_id,
+                        text="Ошибка при конвертации!"
+                    )
+                    return
+                finally:
+                    if input_file_path is not None and os.path.exists(input_file_path):
+                        os.remove(input_file_path)
+                    if converted_video_path is not None and os.path.exists(converted_video_path):
+                        os.remove(converted_video_path)
+            else:
+                video_path = None
+                try:
+                    video_path = await download_file(file_info)
+                    with open(video_path, 'rb') as video:
+                        for channel_id in channel_ids:
+                            await context.bot.send_video(chat_id=channel_id, video=video, filename=message.document.file_name)
+                finally:
+                    if video_path is not None and os.path.exists(video_path):
+                        os.remove(video_path)
         elif message.document.mime_type.startswith("image/"):
             file_info = await context.bot.get_file(document.file_id)
             photo_path = None
             try:
-                photo_path = await download_photo(file_info)
+                photo_path = await download_file(file_info)
                 with open(photo_path, 'rb') as photo:
                     for channel_id in channel_ids:
                         await context.bot.send_photo(chat_id=channel_id, photo=photo, filename=message.document.file_name)
             finally:
                 if photo_path is not None and os.path.exists(photo_path):
                     os.remove(photo_path)
-            await context.bot.send_photo(chat_id=user_chat_id, photo=document.file_id)
         else:
             for channel_id in channel_ids:
                 await context.bot.send_document(chat_id=channel_id, document=document.file_id, caption=message.caption)
